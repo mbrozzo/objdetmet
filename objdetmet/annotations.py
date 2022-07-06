@@ -287,14 +287,8 @@ class Box:
     
     def to_rel(self, img_shape):
         img_shape = Shape2D(img_shape)
-        self._x1 /= img_shape.w
-        self._y1 /= img_shape.h
-        self._x2 /= img_shape.w
-        self._y2 /= img_shape.h
+        return Box(p1=Point2D(self._x1 / img_shape.w, self._y1 / img_shape.h), p2=Point2D(self._x2 / img_shape.w, self._y2 / img_shape.h))
 
     def to_abs(self, img_shape):
         img_shape = Shape2D(img_shape)
-        self._x1 *= img_shape.w
-        self._y1 *= img_shape.h
-        self._x2 *= img_shape.w
-        self._y2 *= img_shape.h
+        return Box(p1=Point2D(self._x1 * img_shape.w, self._y1 * img_shape.h), p2=Point2D(self._x2 * img_shape.w, self._y2 * img_shape.h))
