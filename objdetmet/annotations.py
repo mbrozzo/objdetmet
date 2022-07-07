@@ -6,22 +6,27 @@ from objdetmet.utils import cast_if_different_class
 # Class for shape
 class Shape2D:
 
-    def __init__(self, *args):
-        if len(args) == 2 and isinstance(args[0], numbers.Number) and isinstance(args[1], numbers.Number):
-            w = cast_if_different_class(args[0], float)
-            h = cast_if_different_class(args[1], float)
-        elif len(args) == 1 and isinstance(args[0], Shape2D):
-            w = args[0].w
-            h = args[0].h
-        elif len(args) == 1 and isinstance(args[0], (tuple, list)) and len(args[0]) == 2 and isinstance(args[0][0], numbers.Number) and isinstance(args[0][1], numbers.Number):
-            w = cast_if_different_class(args[0][0], float)
-            h = cast_if_different_class(args[0][1], float)
-        else:
-            raise TypeError('Expected Shape2D, tuple/list of two numbers or two numbers.')
+    def __init__(self, w, h):
+        try:
+            w = cast_if_different_class(w, float)
+            h = cast_if_different_class(h, float)
+        except :
+            raise TypeError('Expected two numbers or other types castable to float.')
         if w < 0 or h < 0:
             raise ValueError('Widths and heights must be non-negative numbers.')
         self._w = w
         self._h = h
+    
+    # Iterable class to convert to list or tuple
+    def __iter__(self):
+        yield self.w
+        yield self.h
+    
+    def __eq__(self, other):
+        return self.w == other.w and self.h == other.h
+    
+    def __repr__(self):
+        return f"Shape2D(w={self._w}, h={self._h})"
     
     def _get_w(self):
         return self._w
@@ -44,33 +49,27 @@ class Shape2D:
         self._h = value
 
     h = property(_get_h, _set_h, doc='Height')
-    
-    # Iterable class to convert to list or tuple
-    def __iter__(self):
-        yield self.w
-        yield self.h
-    
-    def __eq__(self, other):
-        return self.w == other.w and self.h == other.h
 
 # Class for Point2D
 class Point2D:
 
-    def __init__(self, *args):
-        if len(args) == 2 and isinstance(args[0], numbers.Number) and isinstance(args[1], numbers.Number):
-            self._x = cast_if_different_class(args[0], float)
-            self._y = cast_if_different_class(args[1], float)
-        elif len(args) == 1 and isinstance(args[0], Point2D):
-            self._x = args[0]._x
-            self._y = args[0]._y
-        elif len(args) == 1 and isinstance(args[0], (tuple, list)) and len(args[0]) == 2 and isinstance(args[0][0], numbers.Number) and isinstance(args[0][1], numbers.Number):
-            self._x = cast_if_different_class(args[0][0], float)
-            self._y = cast_if_different_class(args[0][1], float)
-        elif len(args) == 0:
-            self._x = 0.0
-            self._y = 0.0
-        else:
-            raise TypeError('Expected Point2D, tuple/list of two numbers or two numbers.')
+    def __init__(self, x=0.0, y=0.0):
+        try:
+            self._x = cast_if_different_class(x, float)
+            self._y = cast_if_different_class(y, float)
+        except :
+            raise TypeError('Expected two numbers or other types castable to float.')
+    
+    # Iterable class to convert to list or tuple
+    def __iter__(self):
+        yield self._x
+        yield self._y
+
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+    
+    def __repr__(self):
+        return f"Point2D(x={self._x}, y={self._y})"
     
     def _get_x(self):
         return self._x
@@ -87,28 +86,16 @@ class Point2D:
         self._y = cast_if_different_class(value, float)
 
     y = property(_get_y, _set_y, doc='y coordinate')
-    
-    # Iterable class to convert to list or tuple
-    def __iter__(self):
-        yield self._x
-        yield self._y
-
-    def __eq__(self, other):
-        return self.x == other.x and self.y == other.y
 
 # Class for rectangular box
 class Box:
     
-    def __init__(self, left=None, top=None, right=None, bottom=None):
+    def __init__(self, left, top, right, bottom):
         try:
-            if left is not None:
-                left = cast_if_different_class(left, float)
-            if top is not None:
-                top = cast_if_different_class(top, float)
-            if right is not None:
-                right = cast_if_different_class(right, float)
-            if bottom is not None:
-                bottom = cast_if_different_class(bottom, float)
+            left = cast_if_different_class(left, float)
+            top = cast_if_different_class(top, float)
+            right = cast_if_different_class(right, float)
+            bottom = cast_if_different_class(bottom, float)
         except Exception as e:
             raise TypeError('Parameters left, right, top and bottom must be float.')
         
@@ -128,6 +115,9 @@ class Box:
         yield self.p2
         yield self.p3
         yield self.p4
+    
+    def __repr__(self):
+        return f"Box(left={self._l}, top={self._t}, right={self._r}, bottom={self._b})"
 
     def _check_lr(self):
         '''Ensure r >= l'''
@@ -164,12 +154,12 @@ class Box:
         '''Bottom side y coordinate'''
         return self._b
 
-    @property()
+    @property
     def coordinates(self):
         '''Tuple of the four box coordinates: (left, top, right, bottom)'''
         return (self._l, self._t, self._r, self._b)
     
-    def set_coordinates(left=None, top=None, right=None, bottom=None):
+    def set_coordinates(self, left=None, top=None, right=None, bottom=None):
         '''Set any of the four box coordinates'''
         if left is not None:
             self._l = cast_if_different_class(left, float)
@@ -229,7 +219,7 @@ class Box:
     @property
     def x4(self):
         '''Bottom-left corner x coordinate'''
-        return self._
+        return self._l
     
     @property
     def y4(self):
@@ -284,7 +274,7 @@ class Box:
         return self._b - self._t
 
     @property
-    def _get_shape(self):
+    def shape(self):
         '''Width and height as Shpe2D'''
         return Shape2D(self.w, self.h)
     
