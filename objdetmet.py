@@ -517,6 +517,8 @@ def metrics2plots(metrics, out_dir):
             plt.title(title)
             plt.xlabel("Confidence")
             plt.ylabel(title.split(maxsplit=1)[0])
+            plt.xlim([-0.01, 1.01])
+            plt.ylim([-0.01, 1.01])
             plt.xticks(np.linspace(0.0, 1.0, 21), rotation=90)
             plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
             plt.savefig(
@@ -529,6 +531,8 @@ def metrics2plots(metrics, out_dir):
     plt.title(title)
     plt.xlabel("Confidence")
     plt.ylabel("F1 score")
+    plt.xlim([-0.01, 1.01])
+    plt.ylim([-0.01, 1.01])
     ax = plt.gca()
     ax.set_prop_cycle(color=colors)
     for label, data in metrics.items():
@@ -550,6 +554,8 @@ def metrics2plots(metrics, out_dir):
     plt.title(title)
     plt.xlabel("Recall")
     plt.ylabel("Precision")
+    plt.xlim([-0.01, 1.01])
+    plt.ylim([-0.01, 1.01])
     ax = plt.gca()
     ax.set_prop_cycle(
         color=[val for pair in zip(colors, colors) for val in pair]
