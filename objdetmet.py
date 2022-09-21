@@ -30,26 +30,7 @@ class_names.sort(key=lambda x: classes_to_integers[x])
 class_names_with_bg = class_names + ["bg"]
 
 
-LOW = np.s_[..., :2]
-HIGH = np.s_[..., 2:]
-
-
-def calculate_iou_matrix(bxs1, bxs2):
-    if len(bxs1) == 0 or len(bxs2) == 0:
-        return np.zeros((len(bxs1), len(bxs2)), dtype="float")
-    intersections = np.maximum(
-        0.0,
-        np.minimum(bxs1[:, None, 2:], bxs2[None, :, 2:])
-        - np.maximum(bxs1[:, None, :2], bxs2[None, :, :2]),
-    ).prod(-1)
-    areas1 = (bxs1[:, None, 2:] - bxs1[:, None, :2]).prod(-1)
-    areas2 = (bxs2[None, :, 2:] - bxs2[None, :, :2]).prod(-1)
-    unions = areas1 + areas2 - intersections
-    ious = np.where(unions == 0.0, 0.0, intersections / unions)
-    return ious
-
-
-def load_label(path):
+def load_label(path, warnings=False):
     path = Path(path)
     empty = (
         np.zeros((0), np.int32),
@@ -57,9 +38,10 @@ def load_label(path):
         np.zeros((0), np.float32),
     )
     if not path.exists():
-        print(
-            f"WARNING: label file {path} missing, empty labels will be returned for the corresponding image."
-        )
+        if warnings:
+            print(
+                f"WARNING: label file {path} missing, empty labels will be returned for the corresponding image."
+            )
         return empty
     try:
         lines = path.read_text().splitlines()
@@ -101,12 +83,32 @@ def load_label(path):
             boxes = np.array(boxes)
             confidences = np.array(confidences)
     except Exception as e:
-        print(
-            f"ERROR: Could not load labels from {path}, empty labels will be returned for the corresponding image."
-        )
-        print(e)
+        if warnings:
+            print(
+                f"WARNING: Could not load labels from {path}, empty labels will be returned for the corresponding image."
+            )
+            print(e)
         return empty
     return classes, boxes, confidences
+
+
+LOW = np.s_[..., :2]
+HIGH = np.s_[..., 2:]
+
+
+def calculate_iou_matrix(bxs1, bxs2):
+    if len(bxs1) == 0 or len(bxs2) == 0:
+        return np.zeros((len(bxs1), len(bxs2)), dtype="float")
+    intersections = np.maximum(
+        0.0,
+        np.minimum(bxs1[:, None, 2:], bxs2[None, :, 2:])
+        - np.maximum(bxs1[:, None, :2], bxs2[None, :, :2]),
+    ).prod(-1)
+    areas1 = (bxs1[:, None, 2:] - bxs1[:, None, :2]).prod(-1)
+    areas2 = (bxs2[None, :, 2:] - bxs2[None, :, :2]).prod(-1)
+    unions = areas1 + areas2 - intersections
+    ious = np.where(unions == 0.0, 0.0, intersections / unions)
+    return ious
 
 
 def calculate_confusion_matrix(
@@ -211,47 +213,73 @@ def make_filename_safe(str_, replacer="_"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    subparsers = parser.add_subparsers()
+
+    parser_generate = subparsers.add_parser("generate")
+    parser_generate.add_argument(
         "ground_truths_dir",
         type=Path,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "detections_dir",
         type=Path,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "out_dir",
         type=Path,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "--n-classes",
         "-n",
         type=int,
         default=16,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "--conf-thresh",
         "-c",
         type=float,
-        default=0.1,
+        default=0.5,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "--iou-thresh",
         "-i",
         type=float,
         default=0.5,
     )
-    parser.add_argument(
+    parser_generate.add_argument(
         "--conf-step",
         type=float,
-        default=0.01,
+        default=0.005,
     )
-    # parser.add_argument(
-    #     "--iou-step",
-    #     type=float,
-    #     default=0.05,
-    # )
+    generate_exclusion = parser_generate.add_mutually_exclusive_group()
+    generate_exclusion.add_argument(
+        "--no-json",
+        action="store_true",
+        default=False,
+    )
+    generate_exclusion.add_argument(
+        "--no-plots",
+        action="store_true",
+        default=False,
+    )
+    parser_generate.set_defaults(func=generate)
+
+    parser_json2plots = subparsers.add_parser("json2plots")
+    parser_json2plots.add_argument(
+        "json_file_path",
+        type=Path,
+    )
+    parser_json2plots.add_argument(
+        "out_dir",
+        type=Path,
+    )
+    parser_json2plots.set_defaults(func=json2plots)
+
     args = parser.parse_args()
+    args.func(args)
+
+
+def generate(args):
     ground_truths_dir: Path = args.ground_truths_dir
     detections_dir: Path = args.detections_dir
     out_dir: Path = args.out_dir
@@ -259,8 +287,8 @@ def main():
     conf_th_default: float = args.conf_thresh
     iou_th_default: float = args.iou_thresh
     n_classes: int = args.n_classes
-    # images_dir: Path = args.images_dir
-
+    gen_json: bool = not args.no_json
+    gen_plots: bool = not args.no_plots
     iou_th_list = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
     if iou_th_default not in iou_th_list:
         iou_th_default = min(iou_th_list, key=lambda x: abs(x - iou_th_default))
@@ -320,14 +348,10 @@ def main():
     mAP_05_095 = np.array(0)
 
     # Calculate confusion matrix
-    for gt_path in tqdm(
-        list(ground_truths_dir.glob("*.txt"))[:10]
-    ):  # TODO rimuovi [:10]
-        detection_path = detections_dir / gt_path.name
-        if not detection_path.exists():
-            print("WARNING: Detection label file not found, skipping.")
-            continue
+    print("Calculating confusion matrices")
+    for gt_path in tqdm(list(ground_truths_dir.glob("*.txt"))):
         gt_classes, gt_boxes, _ = load_label(gt_path)
+        detection_path = detections_dir / gt_path.name
         det_classes, det_boxes, det_confidences = load_label(detection_path)
 
         # rows: gt, cols: det
@@ -345,6 +369,7 @@ def main():
                     n_classes,
                 )
 
+    print("Calculating other metrics")
     # Calculate other stats
     for i, iou_th in enumerate(iou_th_list):
         for j, conf_th in enumerate(conf_th_list):
@@ -368,10 +393,14 @@ def main():
             weighted_F1_by_iou_and_conf[i, j] = np.nan_to_num(
                 (f1 * weights).sum() / weights.sum()
             )
-    conf_th_best_idx = weighted_F1_by_iou_and_conf[
-        iou_th_list.index(iou_th_default)
+
+    weighted_F1_max_idx = weighted_F1_by_iou_and_conf[
+        iou_th_default_idx
     ].argmax()
-    conf_th_best = conf_th_list[conf_th_best_idx]
+    weighted_F1_max = weighted_F1_by_iou_and_conf[iou_th_default_idx][
+        weighted_F1_max_idx
+    ]
+    conf_th_best = conf_th_list[weighted_F1_max_idx]
 
     # Calculate AP
     for i, iou_th in enumerate(iou_th_list):
@@ -385,6 +414,8 @@ def main():
     mAP_05_095 = mAP_by_iou.mean()
 
     metrics = {
+        "Confidence Thresholds": conf_th_list,
+        "Default IoU Threshold": iou_th_default,
         f"Confusion Matrix @iou={iou_th_default},conf={conf_th_default}": CM_by_iou_and_conf[
             iou_th_default_idx
         ][
@@ -393,7 +424,7 @@ def main():
         f"Confusion Matrix @iou={iou_th_default},conf={conf_th_best}": CM_by_iou_and_conf[
             iou_th_default_idx
         ][
-            conf_th_best_idx
+            weighted_F1_max_idx
         ].tolist(),
         f"Precision curves by class @iou={iou_th_default}": P_by_iou_conf_and_class[
             iou_th_default_idx
@@ -404,80 +435,140 @@ def main():
         f"F1 curves by class @iou={iou_th_default}": F1_by_iou_conf_and_class[
             iou_th_default_idx
         ].tolist(),
-        f"Macro F1 curve @iou={iou_th_default}": macro_F1_by_iou_and_conf[
+        f"Macro-F1 curve @iou={iou_th_default}": macro_F1_by_iou_and_conf[
             iou_th_default_idx
         ].tolist(),
-        f"Micro F1 curve @iou={iou_th_default}": micro_F1_by_iou_and_conf[
+        f"Micro-F1 curve @iou={iou_th_default}": micro_F1_by_iou_and_conf[
             iou_th_default_idx
         ].tolist(),
-        f"Weighted F1 curve @iou={iou_th_default}": weighted_F1_by_iou_and_conf[
+        f"Weighted-F1 curve @iou={iou_th_default}": weighted_F1_by_iou_and_conf[
             iou_th_default_idx
         ].tolist(),
-        f"Confidence Threshold @iou={iou_th_default},max(Weighted F1 curve)": float(
+        f"Maximum Weighted F1 @iou={iou_th_default}": float(weighted_F1_max),
+        f"Confidence Threshold for Maximum Weighted F1 @iou={iou_th_default}": float(
             conf_th_best
         ),
         "mAP@0.5": float(mAP_by_iou[iou_th_list.index(0.5)]),
         "mAP@0.75": float(mAP_by_iou[iou_th_list.index(0.75)]),
         "mAP@[0.5:0.05:0.95]": float(mAP_05_095),
     }
-    out_dir.mkdir(exist_ok=True, parents=True)
-    with (out_dir / "metrics.json").open("w") as out_json:
-        json.dump(metrics, out_json)
+    if gen_json:
+        print("Saving JSON")
+        out_dir.mkdir(exist_ok=True, parents=True)
+        with (out_dir / "metrics.json").open("w") as out_json:
+            json.dump(metrics, out_json, indent=4)
+    if gen_plots:
+        metrics2plots(metrics, out_dir)
+
+
+def json2plots(args):
+    json_file_path = args.json_file_path
+    out_dir = args.out_dir
+    with json_file_path.open() as in_json:
+        metrics = json.load(in_json)
+    metrics2plots(metrics, out_dir)
+
+
+def metrics2plots(metrics, out_dir):
+    print("Generating plots")
+    conf_th_list = metrics["Confidence Thresholds"]
+    iou_th_default = metrics["Default IoU Threshold"]
+
+    cm = plt.get_cmap("tab20")
+    colors = [cm(2.0 * i / 20) for i in range(10)] + [
+        cm((2.0 * i + 1) / 20) for i in range(10)
+    ]
 
     for title, data in metrics.items():
         data = np.array(data)
         if title.startswith("Confusion Matrix"):
             # Confusion matrix
-            fig, ax = plt.subplots()
-            plt.xticks(list(range(len(data[0]))), class_names_with_bg)
-            plt.yticks(list(range(len(data))), class_names_with_bg)
-            ax.matshow(data, cmap="Blues")
+            fig = plt.figure(dpi=300)
+            ax = plt.gca()
+            im = ax.matshow(data)
+            fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
                 ax.text(j, i, str(z), ha="center", va="center")
             plt.title(title)
-            plt.xlabel("Predictions")
-            plt.gca().xaxis.set_label_position("top")
-            plt.ylabel("True labels")
-            plt.savefig(out_dir / f"{title}.png")
+            plt.xlabel("Predicted class")
+            plt.ylabel("True class")
+            plt.xticks(
+                list(range(len(class_names_with_bg))),
+                class_names_with_bg,
+                rotation=90,
+            )
+            plt.yticks(
+                list(range(len(class_names_with_bg))), class_names_with_bg
+            )
+            ax.xaxis.set_ticks_position("bottom")
+            plt.savefig(
+                out_dir / f"{make_filename_safe(title)}.png",
+                bbox_inches="tight",
+            )
         elif title.startswith("Precision curve") or title.startswith(
             "Recall curve"
         ):
             # Precision and recall to confidence curves
-            plt.figure()
-            plt.xticks(list(range(len(conf_th_list))), conf_th_list)
-            for i in range(len(data[0])):
-                plt.plot(data[:, i], label=class_names[i])
+            plt.figure(dpi=300)
+            ax = plt.gca()
+            ax.set_prop_cycle(color=colors)
+            for i in range(len(class_names)):
+                plt.plot(conf_th_list, data[:, i], label=class_names[i])
             plt.title(title)
             plt.xlabel("Confidence")
             plt.ylabel(title.split(maxsplit=1)[0])
-            plt.savefig(out_dir / f"{make_filename_safe(title)}.png")
+            plt.xticks(np.linspace(0.0, 1.0, 21), rotation=90)
+            plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+            plt.savefig(
+                out_dir / f"{make_filename_safe(title)}.png",
+                bbox_inches="tight",
+            )
 
-    plt.figure()
-    plt.xticks(list(range(len(conf_th_list))), conf_th_list)
-    plt.title("F1 scores by class and averaged")
+    plt.figure(dpi=300)
+    title = f"F1 scores by class and averaged @iou={iou_th_default}"
+    plt.title(title)
     plt.xlabel("Confidence")
     plt.ylabel("F1 score")
-    for title, data in metrics.items():
+    ax = plt.gca()
+    ax.set_prop_cycle(color=colors)
+    for label, data in metrics.items():
         data = np.array(data)
-        if "F1 curves" in title:
+        label = label.split(" @", maxsplit=1)[0]
+        if "F1 curves" in label:
             for i in range(len(data[0])):
-                plt.plot(data[:, i], label=class_names[i])
-        elif "F1 curve" in title:
-            label = title.split("@", maxsplit=1)[0][:-1]
-            plt.plot(data, label=label)
-    plt.savefig(out_dir / f"{make_filename_safe(title)}.png")
+                plt.plot(conf_th_list, data[:, i], label=class_names[i])
+        elif "F1 curve" in label:
+            plt.plot(conf_th_list, data, label=label[:-6], lw=3)
+    plt.xticks(np.linspace(0.0, 1.0, 21), rotation=90)
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.savefig(
+        out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"
+    )
 
-    plt.figure()
-    plt.xticks(list(range(len(conf_th_list))), conf_th_list)
+    plt.figure(dpi=300)
     title = f"Precision-Recall curves by class @iou={iou_th_default}"
     plt.title(title)
     plt.xlabel("Recall")
     plt.ylabel("Precision")
+    ax = plt.gca()
+    ax.set_prop_cycle(
+        color=[val for pair in zip(colors, colors) for val in pair]
+    )
     for i in range(len(class_names)):
-        p = P_by_iou_conf_and_class[iou_th_default_idx]
-        r = R_by_iou_conf_and_class[iou_th_default_idx]
-        plt.plot(r, p, label=class_names[i])
-    plt.savefig(out_dir / f"{make_filename_safe(title)}.png")
+        p = np.array(
+            metrics[f"Precision curves by class @iou={iou_th_default}"]
+        )[:, i]
+        r = np.array(metrics[f"Recall curves by class @iou={iou_th_default}"])[
+            :, i
+        ]
+        p_acc = np.maximum.accumulate(p)
+        r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
+        plt.plot(r_acc, p_acc, label=class_names[i])
+        plt.plot(r, p, linestyle=":")
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.savefig(
+        out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"
+    )
 
 
 if __name__ == "__main__":
