@@ -139,11 +139,9 @@ def calculate_confusion_matrix(
     else:
         # Create matches matrix
         # Matrix where: element i,j True <=> gt i and detection j boxes match
+        # Multiple detections can match one gt, but not vice versa
         box_matches_matrix = np.logical_and(
-            np.logical_and(
-                iou_matrix > iou_thresh, iou_matrix == iou_matrix.max(0)
-            ),
-            iou_matrix == iou_matrix.max(1)[:, None],
+            iou_matrix > iou_thresh, iou_matrix == iou_matrix.max(0)
         )
         box_matches_idxs = np.where(box_matches_matrix)
         # Get classes of each couple of matched gt and box
@@ -238,7 +236,7 @@ def main():
         "--conf-thresh",
         "-c",
         type=float,
-        default=0.5,
+        default=0.8,
     )
     parser_generate.add_argument(
         "--iou-thresh",
@@ -249,7 +247,7 @@ def main():
     parser_generate.add_argument(
         "--conf-step",
         type=float,
-        default=0.005,
+        default=0.01,
     )
     generate_exclusion = parser_generate.add_mutually_exclusive_group()
     generate_exclusion.add_argument(
@@ -303,7 +301,7 @@ def generate(args):
     while conf_th <= 1.0:
         conf_th_list.append(conf_th)
         i += 1
-        conf_th = conf_step * i
+        conf_th = i / (1 / conf_step)  # More precise results
     if conf_th_default not in conf_th_list:
         conf_th_default = min(
             conf_th_list, key=lambda x: abs(x - conf_th_default)
