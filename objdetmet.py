@@ -47,41 +47,41 @@ def load_label(path, warnings=False):
         lines = path.read_text().splitlines()
         if not lines:
             return empty
-        else:
-            classes = []
-            boxes = []
-            confidences = []
-            for line in lines:
-                conf = 1
-                split_line = line.split()
-                if len(split_line) == 5:
-                    cl, x, y, w, h = split_line
-                elif len(split_line) == 6:
-                    cl, x, y, w, h, conf = split_line
-                else:
-                    raise Exception("Too many or too few values in one line.")
-                cl = int(float(cl))
-                x = float(w)
-                y = float(h)
-                w = abs(float(w))
-                h = abs(float(h))
-                l = x - w / 2
-                t = y - h / 2
-                r = x + w / 2
-                b = y + h / 2
-                box = [
-                    float(l),
-                    float(t),
-                    float(r),
-                    float(b),
-                ]
-                conf = float(conf)
-                classes.append(cl)
-                boxes.append(box)
-                confidences.append(conf)
-            classes = np.array(classes)
-            boxes = np.array(boxes)
-            confidences = np.array(confidences)
+        # else
+        classes = []
+        boxes = []
+        confidences = []
+        for line in lines:
+            conf = 1
+            split_line = line.split()
+            if len(split_line) == 5:
+                cl, x, y, w, h = split_line
+            elif len(split_line) == 6:
+                cl, x, y, w, h, conf = split_line
+            else:
+                raise Exception("Too many or too few values in one line.")
+            cl = int(float(cl))
+            x = float(w)
+            y = float(h)
+            w = abs(float(w))
+            h = abs(float(h))
+            l = x - w / 2
+            t = y - h / 2
+            r = x + w / 2
+            b = y + h / 2
+            box = [
+                float(l),
+                float(t),
+                float(r),
+                float(b),
+            ]
+            conf = float(conf)
+            classes.append(cl)
+            boxes.append(box)
+            confidences.append(conf)
+        classes = np.array(classes)
+        boxes = np.array(boxes)
+        confidences = np.array(confidences)
     except Exception as e:
         if warnings:
             print(
@@ -287,6 +287,7 @@ def generate(args):
     n_classes: int = args.n_classes
     gen_json: bool = not args.no_json
     gen_plots: bool = not args.no_plots
+
     iou_th_list = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
     if iou_th_default not in iou_th_list:
         iou_th_default = min(iou_th_list, key=lambda x: abs(x - iou_th_default))
@@ -306,7 +307,7 @@ def generate(args):
         conf_th_default = min(
             conf_th_list, key=lambda x: abs(x - conf_th_default)
         )
-        print("WARNING: iou_th_default rounded to closest available one.")
+        print("WARNING: conf_th_default rounded to closest available one.")
     conf_th_default_idx = conf_th_list.index(conf_th_default)
 
     # Define stats arrays
@@ -367,12 +368,16 @@ def generate(args):
                     n_classes,
                 )
 
-    print("Calculating other metrics")
     # Calculate other stats
+    print("Calculating other metrics")
     for i, iou_th in enumerate(iou_th_list):
         for j, conf_th in enumerate(conf_th_list):
             cm = CM_by_iou_and_conf[i, j]
             tp, fp, fn = calculate_tp_fp_fn(cm)
+            # Use float to avoid overflow
+            tp = tp.astype(np.float32)
+            fp = fp.astype(np.float32)
+            fn = fn.astype(np.float32)
             TP_by_iou_conf_and_class[i, j] = tp
             FP_by_iou_conf_and_class[i, j] = fp
             FN_by_iou_conf_and_class[i, j] = fn
