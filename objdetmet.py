@@ -61,8 +61,8 @@ def load_label(path, warnings=False):
             else:
                 raise Exception("Too many or too few values in one line.")
             cl = int(float(cl))
-            x = float(w)
-            y = float(h)
+            x = float(x)
+            y = float(y)
             w = abs(float(w))
             h = abs(float(h))
             l = x - w / 2
@@ -167,7 +167,7 @@ def calculate_confusion_matrix(
 
 
 def calculate_tp_fp_fn(confusion_matrix):
-    # Arrays of length n_classes with metrics for each class and sum for all classes
+    # Arrays of length n_classes with metrics for each class
     tp = confusion_matrix.diagonal()
     fp = confusion_matrix.sum(0) - tp
     fn = confusion_matrix.sum(1) - tp
