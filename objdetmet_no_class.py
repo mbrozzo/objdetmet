@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import json
+import matplotlib
 from matplotlib import pyplot as plt
 
 
@@ -321,12 +322,8 @@ def generate(args):
             f1 = np.nan_to_num(2 * p * r / (p + r))
             F1_by_iou_and_conf[i, j] = f1
 
-    F1_max_idx = F1_by_iou_and_conf[
-        iou_th_default_idx
-    ].argmax()
-    weighted_F1_max = F1_by_iou_and_conf[iou_th_default_idx][
-        F1_max_idx
-    ]
+    F1_max_idx = F1_by_iou_and_conf[iou_th_default_idx].argmax()
+    weighted_F1_max = F1_by_iou_and_conf[iou_th_default_idx][F1_max_idx]
     conf_th_best = conf_th_list[F1_max_idx]
 
     # Calculate AP
@@ -398,7 +395,9 @@ def metrics2plots(metrics, out_dir):
             ax = plt.gca()
             data = data.astype(np.float32)
             data[-1, -1] = float("nan")
-            im = ax.matshow(data, cmap="cool")
+            cmap = matplotlib.cm.get_cmap("Wistia")
+            cmap.set_bad(color="grey")
+            im = ax.matshow(data, cmap=cmap)
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
                 if math.isnan(z):

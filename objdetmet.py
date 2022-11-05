@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import json
+import matplotlib
 from matplotlib import pyplot as plt
 
 
@@ -565,12 +566,14 @@ def metrics2plots(metrics, out_dir):
             # Confusion matrix
             fig = plt.figure(dpi=300)
             ax = plt.gca()
-            data = data.astype(np.float32)
-            data[-1, -1] = float("nan")
-            im = ax.matshow(data, cmap="cool")
+            data_plot = data.astype(np.float32)
+            data_plot[data_plot == 0] = float("nan")
+            cmap = matplotlib.cm.get_cmap("Wistia")
+            cmap.set_bad(color="lightgrey")
+            im = ax.matshow(data_plot, cmap=cmap)
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
-                if math.isnan(z):
+                if i == data.shape[0] - 1 and j == data.shape[1] - 1:
                     z = "N/A"
                 else:
                     z = str(int(z))

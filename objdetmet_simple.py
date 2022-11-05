@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import json
+import matplotlib
 from matplotlib import pyplot as plt
 
 
@@ -387,7 +388,9 @@ def metrics2plots(metrics, out_dir):
                 y = i // n
                 ax = axes[y, x]
                 ax.set_title(class_names[i], {"fontsize": "small"})
-                im = ax.matshow(cm, cmap="cool")
+                cmap = matplotlib.cm.get_cmap("Wistia")
+                cmap.set_bad(color="grey")
+                im = ax.matshow(data, cmap=cmap)
                 # fig.colorbar(im, ax=ax)
                 cm[1, 1] = tn
                 cm = cm.astype(np.int32)
