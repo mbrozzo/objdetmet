@@ -396,7 +396,7 @@ def metrics2plots(metrics, out_dir):
             data = data.astype(np.float32)
             data[-1, -1] = float("nan")
             cmap = matplotlib.cm.get_cmap("Wistia")
-            cmap.set_bad(color="grey")
+            cmap.set_bad(color="lightgrey")
             im = ax.matshow(data, cmap=cmap)
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):

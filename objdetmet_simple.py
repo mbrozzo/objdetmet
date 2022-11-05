@@ -389,7 +389,7 @@ def metrics2plots(metrics, out_dir):
                 ax = axes[y, x]
                 ax.set_title(class_names[i], {"fontsize": "small"})
                 cmap = matplotlib.cm.get_cmap("Wistia")
-                cmap.set_bad(color="grey")
+                cmap.set_bad(color="lightgrey")
                 im = ax.matshow(data, cmap=cmap)
                 # fig.colorbar(im, ax=ax)
                 cm[1, 1] = tn
