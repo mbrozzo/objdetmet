@@ -376,7 +376,7 @@ def metrics2plots(metrics, out_dir):
                 y = i // n
                 ax = axes[y, x]
                 ax.set_title(class_names[i], {"fontsize": 8})
-                im = ax.matshow(cm)
+                im = ax.matshow(cm, cmap="cool")
                 # fig.colorbar(im, ax=ax)
                 for (i, j), z in np.ndenumerate(cm):
                     if i == 1 and j == 1:
