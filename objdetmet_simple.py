@@ -30,7 +30,6 @@ class_names = list(classes_to_integers.keys())
 class_names.sort(key=lambda x: classes_to_integers[x])
 class_names_with_bg = class_names + ["bg"]
 
-
 def load_and_simplify_label(path, n_classes, warnings=False):
     path = Path(path)
     empty = np.zeros((n_classes), np.int32)
@@ -368,9 +367,30 @@ def metrics2plots(metrics, out_dir):
     print("Generating plots")
     conf_th_list = metrics["Confidence Thresholds"]
 
-    cm = plt.get_cmap("tab20")
-    colors = [cm(2.0 * i / 20) for i in range(10)] + [
-        cm((2.0 * i + 1) / 20) for i in range(10)
+    # cm = plt.get_cmap("tab20")
+    # colors = [cm(2.0 * i / 20) for i in range(10)] + [
+    #     cm((2.0 * i + 1) / 20) for i in range(10)
+    # ]
+    colors = [
+        "tab:orange",  # 1 orange, black
+        "tab:red",  # 2.1/3 red, black
+        "tab:green",  # 2.2 green, white
+        "cyan",  # 2.3/6.1 white, black
+        "tab:pink",  # 4.1 rose, white
+        "tab:brown",  # 4.2 red, white
+        "tab:blue",  # 4.3 blue, white
+        "gold",  # 5.1 yellow, black
+        "tab:olive",  # 5.2 yellow, red
+        "lightsalmon",  # 6.2 light grey, grey
+        "greenyellow",  # 7 light yellow, black
+        "darkseagreen",  # 7E white
+        "darkblue",  # 8 grey, white
+        "tab:gray",  # 9 white, grey
+        "tab:purple",  # LQ grey, light grey
+        "tab:cyan",  # MP light grey, black
+        "magenta",  # Macro
+        "purple",  # Micro
+        "blue",  # Weighted
     ]
 
     for title, data in metrics.items():
@@ -390,7 +410,7 @@ def metrics2plots(metrics, out_dir):
                 ax.set_title(class_names[i], {"fontsize": "small"})
                 cmap = matplotlib.cm.get_cmap("Wistia")
                 cmap.set_bad(color="lightgrey")
-                im = ax.matshow(data, cmap=cmap)
+                im = ax.matshow(cm, cmap=cmap)
                 # fig.colorbar(im, ax=ax)
                 cm[1, 1] = tn
                 cm = cm.astype(np.int32)
