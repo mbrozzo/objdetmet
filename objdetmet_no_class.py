@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 import argparse
 import numpy as np
@@ -69,7 +70,7 @@ HIGH = np.s_[..., 2:]
 
 def calculate_iou_matrix(bxs1, bxs2):
     if len(bxs1) == 0 or len(bxs2) == 0:
-        return np.zeros((len(bxs1), len(bxs2)), dtype="float")
+        return np.zeros((len(bxs1), len(bxs2)), dtype=np.float32)
     intersections = np.maximum(
         0.0,
         np.minimum(bxs1[:, None, 2:], bxs2[None, :, 2:])
@@ -92,9 +93,9 @@ def calculate_confusion_matrix(
     conf_idxs = np.where(det_confidences >= conf_thresh)[0]
     iou_matrix = iou_matrix[:, conf_idxs]
     # Initialize confusion matrix
-    cm = np.zeros((2, 2), dtype="int")
+    cm = np.zeros((2, 2), dtype=np.int32)
     if iou_matrix.shape[0] == 0 and iou_matrix.shape[1] == 0:
-        pass
+        return cm
     if iou_matrix.shape[0] == 0:
         # Only false positives
         cm[1, 0] = iou_matrix.shape[1]
@@ -109,12 +110,15 @@ def calculate_confusion_matrix(
             iou_matrix > iou_thresh, iou_matrix == iou_matrix.max(0)
         )
         # Update cm with matches (true positives)
-        cm[0, 0] = box_matches_matrix.astype("int").sum()
+        # Only one match per gt is counted when there are multiple
+        tp = box_matches_matrix.any(1).astype(np.int32).sum()
+        cm[0, 0] = tp
         # Update cm with false positives
-        fp = np.logical_not(box_matches_matrix.any(0)).astype("int").sum()
+        fp = np.logical_not(box_matches_matrix.any(0)).astype(np.int32).sum()
         cm[1, 0] += fp
         # Update cm with false negatives
-        fn = np.logical_not(box_matches_matrix.any(1)).astype("int").sum()
+        # fn = np.logical_not(box_matches_matrix.any(1)).astype(np.int32).sum()
+        fn = box_matches_matrix.shape[0] - tp
         cm[0, 1] += fn
     return cm
 
@@ -254,28 +258,28 @@ def generate(args):
     # Define stats arrays
     CM_by_iou_and_conf = np.zeros(
         (len(iou_th_list), len(conf_th_list), 2, 2),
-        dtype="int",
+        dtype=np.int32,
     )
     TP_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="int"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.int32
     )
     FP_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="int"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.int32
     )
     FN_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="int"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.int32
     )
     P_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
     R_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
     F1_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
-    AP_by_iou = np.zeros((len(iou_th_list)), dtype="float")
-    mAP_by_iou = np.zeros((len(iou_th_list)), dtype="float")
+    AP_by_iou = np.zeros((len(iou_th_list)), dtype=np.float32)
+    mAP_by_iou = np.zeros((len(iou_th_list)), dtype=np.float32)
     mAP_05_095 = np.array(0)
 
     # Calculate confusion matrix
@@ -310,8 +314,8 @@ def generate(args):
             TP_by_iou_and_conf[i, j] = tp
             FP_by_iou_and_conf[i, j] = fp
             FN_by_iou_and_conf[i, j] = fn
-            p = np.nan_to_num(tp / (tp + fp))
-            r = np.nan_to_num(tp / (tp + fn))
+            p = tp / (tp + fp)
+            r = tp / (tp + fn)
             P_by_iou_and_conf[i, j] = p
             R_by_iou_and_conf[i, j] = r
             f1 = np.nan_to_num(2 * p * r / (p + r))
@@ -386,25 +390,26 @@ def metrics2plots(metrics, out_dir):
     conf_th_list = metrics["Confidence Thresholds"]
     iou_th_default = metrics["Default IoU Threshold"]
 
-    cm = plt.get_cmap("tab20")
-    colors = [cm(2.0 * i / 20) for i in range(10)] + [
-        cm((2.0 * i + 1) / 20) for i in range(10)
-    ]
-
     for title, data in metrics.items():
         data = np.array(data)
         if title.startswith("Confusion Matrix"):
             # Confusion matrix
             fig = plt.figure(dpi=300)
             ax = plt.gca()
+            data = data.astype(np.float32)
+            data[-1, -1] = float("nan")
             im = ax.matshow(data, cmap="cool")
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
-                ax.text(j, i, str(z), ha="center", va="center")
+                if math.isnan(z):
+                    z = "N/A"
+                else:
+                    z = str(int(z))
+                ax.text(j, i, z, ha="center", va="center")
             plt.title(title)
             plt.xlabel("Predicted class")
             plt.ylabel("True class")
-            plt.xticks([0, 1], ["P", "N"], rotation=90)
+            plt.xticks([0, 1], ["P", "N"])
             plt.yticks([0, 1], ["P", "N"])
             ax.xaxis.set_ticks_position("bottom")
             plt.savefig(
@@ -456,10 +461,10 @@ def metrics2plots(metrics, out_dir):
     ax = plt.gca()
     p = np.array(metrics[f"Precision curve @iou={iou_th_default}"])
     r = np.array(metrics[f"Recall curve @iou={iou_th_default}"])
-    p_acc = np.maximum.accumulate(p)
-    r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-    plt.plot(r_acc, p_acc)
-    plt.plot(r, p, linestyle=":")
+    p_acc = np.maximum.accumulate(np.nan_to_num(p))
+    # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
+    plt.plot(r, p_acc, color="tab:blue")
+    plt.plot(r, p, linestyle=":", color="tab:blue")
     plt.savefig(
         out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"
     )

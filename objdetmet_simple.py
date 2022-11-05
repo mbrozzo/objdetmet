@@ -98,7 +98,7 @@ def calculate_confusion_matrices(gt, det, conf_thresh):
     # Filter det by confidence threshold
     det = np.where(det >= conf_thresh, 1, 0)
     # Initialize confusion matrices
-    cm = np.zeros((n_classes, 2, 2), dtype="int")
+    cm = np.zeros((n_classes, 2, 2), dtype=np.int32)
     # First dimension: actual; second dimension: predicted
     # [[TP, FN],
     #  [FP, TN]]
@@ -228,28 +228,36 @@ def generate(args):
     CM_by_conf_and_class = np.zeros(
         (len(conf_th_list), n_classes, 2, 2), dtype=np.int32
     )
-    TP_by_conf_and_class = np.zeros((len(conf_th_list), n_classes), dtype="int")
-    TN_by_conf_and_class = np.zeros((len(conf_th_list), n_classes), dtype="int")
-    FP_by_conf_and_class = np.zeros((len(conf_th_list), n_classes), dtype="int")
-    FN_by_conf_and_class = np.zeros((len(conf_th_list), n_classes), dtype="int")
+    TP_by_conf_and_class = np.zeros(
+        (len(conf_th_list), n_classes), dtype=np.int32
+    )
+    TN_by_conf_and_class = np.zeros(
+        (len(conf_th_list), n_classes), dtype=np.int32
+    )
+    FP_by_conf_and_class = np.zeros(
+        (len(conf_th_list), n_classes), dtype=np.int32
+    )
+    FN_by_conf_and_class = np.zeros(
+        (len(conf_th_list), n_classes), dtype=np.int32
+    )
     P_by_conf_and_class = np.zeros(
-        (len(conf_th_list), n_classes), dtype="float"
+        (len(conf_th_list), n_classes), dtype=np.float32
     )
     R_by_conf_and_class = np.zeros(
-        (len(conf_th_list), n_classes), dtype="float"
+        (len(conf_th_list), n_classes), dtype=np.float32
     )
     F1_by_conf_and_class = np.zeros(
-        (len(conf_th_list), n_classes), dtype="float"
+        (len(conf_th_list), n_classes), dtype=np.float32
     )
-    macro_F1_by_conf = np.zeros((len(conf_th_list)), dtype="float")
-    micro_F1_by_conf = np.zeros((len(conf_th_list)), dtype="float")
-    weighted_F1_by_conf = np.zeros((len(conf_th_list)), dtype="float")
+    macro_F1_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
+    micro_F1_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
+    weighted_F1_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
     MCC_by_conf_and_class = np.zeros(
-        (len(conf_th_list), n_classes), dtype="float"
+        (len(conf_th_list), n_classes), dtype=np.float32
     )
-    macro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype="float")
-    micro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype="float")
-    weighted_MCC_by_conf = np.zeros((len(conf_th_list)), dtype="float")
+    macro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
+    micro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
+    weighted_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
 
     # Calculate confusion matrix
     print("Calculating confusion matrices")
@@ -276,8 +284,8 @@ def generate(args):
         TN_by_conf_and_class[i] = tn
         FP_by_conf_and_class[i] = fp
         FN_by_conf_and_class[i] = fn
-        p = np.nan_to_num(tp / (tp + fp))
-        r = np.nan_to_num(tp / (tp + fn))
+        p = tp / (tp + fp)
+        r = tp / (tp + fn)
         P_by_conf_and_class[i] = p
         R_by_conf_and_class[i] = r
         f1 = np.nan_to_num(2 * p * r / (p + r))
@@ -301,7 +309,7 @@ def generate(args):
         )
         MCC_by_conf_and_class[i] = mcc
         macro_MCC_by_conf[i] = mcc.mean()
-        micro_MCC_by_conf[i] = (
+        micro_MCC_by_conf[i] = np.nan_to_num(
             tp_total * tn_total - fp_total * fn_total
         ) / np.sqrt(
             (tp_total + fp_total)
@@ -309,7 +317,9 @@ def generate(args):
             * (tn_total + fp_total)
             * (tn_total + fn_total)
         )
-        weighted_MCC_by_conf[i] = (mcc * weights).sum() / weights.sum()
+        weighted_MCC_by_conf[i] = np.nan_to_num(
+            (mcc * weights).sum() / weights.sum()
+        )
 
     weighted_F1_max_idx = weighted_F1_by_conf.argmax()
     weighted_F1_max = weighted_F1_by_conf[weighted_F1_max_idx]
@@ -370,20 +380,28 @@ def metrics2plots(metrics, out_dir):
             fig, axes = plt.subplots(n, n, dpi=300)
             fig.suptitle(title)
             for i, cm in enumerate(data):
+                cm = cm.astype(np.float32)
                 tn = cm[1, 1]
-                cm[1, 1] = 0
+                cm[1, 1] = float("nan")
                 x = i % n
                 y = i // n
                 ax = axes[y, x]
-                ax.set_title(class_names[i], {"fontsize": 8})
+                ax.set_title(class_names[i], {"fontsize": "small"})
                 im = ax.matshow(cm, cmap="cool")
                 # fig.colorbar(im, ax=ax)
+                cm[1, 1] = tn
+                cm = cm.astype(np.int32)
                 for (i, j), z in np.ndenumerate(cm):
-                    if i == 1 and j == 1:
-                        z = tn
-                    ax.text(j, i, str(z), ha="center", va="center")
-                ax.set_yticks([0, 1], ["P", "N"], fontsize=8)
-                ax.set_xticks([0, 1], ["P", "N"], fontsize=8, rotation=90)
+                    ax.text(
+                        j,
+                        i,
+                        str(z),
+                        ha="center",
+                        va="center",
+                        fontdict={"fontsize": "small"},
+                    )
+                ax.set_xticks([0, 1], ["P", "N"], fontsize="small")
+                ax.set_yticks([0, 1], ["P", "N"], fontsize="small")
                 ax.xaxis.set_ticks_position("bottom")
             fig.supxlabel("Predicted")
             fig.supylabel("Actual")
@@ -471,9 +489,9 @@ def metrics2plots(metrics, out_dir):
     for i in range(len(class_names)):
         p = np.array(metrics[f"Precision curves by class"])[:, i]
         r = np.array(metrics[f"Recall curves by class"])[:, i]
-        p_acc = np.maximum.accumulate(p)
-        r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-        plt.plot(r_acc, p_acc, label=class_names[i])
+        p_acc = np.maximum.accumulate(np.nan_to_num(p))
+        # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
+        plt.plot(r, p_acc, label=class_names[i])
         plt.plot(r, p, linestyle=":")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(

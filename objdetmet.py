@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 import argparse
 import numpy as np
@@ -27,7 +28,7 @@ classes_to_integers = {
 
 class_names = list(classes_to_integers.keys())
 class_names.sort(key=lambda x: classes_to_integers[x])
-class_names_with_bg = class_names + ["bg"]
+class_names_with_bg = class_names + ["background"]
 
 
 def load_label(path, warnings=False):
@@ -98,7 +99,7 @@ HIGH = np.s_[..., 2:]
 
 def calculate_iou_matrix(bxs1, bxs2):
     if len(bxs1) == 0 or len(bxs2) == 0:
-        return np.zeros((len(bxs1), len(bxs2)), dtype="float")
+        return np.zeros((len(bxs1), len(bxs2)), dtype=np.float32)
     intersections = np.maximum(
         0.0,
         np.minimum(bxs1[:, None, 2:], bxs2[None, :, 2:])
@@ -115,54 +116,117 @@ def calculate_confusion_matrix(
     iou_matrix,
     gt_classes,
     det_classes,
-    det_confidences,
-    conf_thresh,
     iou_thresh,
     n_classes,
 ):
-    # Filter det by confidence threshold
-    conf_idxs = np.where(det_confidences >= conf_thresh)[0]
-    det_classes = det_classes[conf_idxs]
-    iou_matrix = iou_matrix[:, conf_idxs]
     # Initialize confusion matrix
-    cm = np.zeros((n_classes + 1, n_classes + 1), dtype="int")
+    cm = np.zeros((n_classes + 1, n_classes + 1), dtype=np.int32)
     if iou_matrix.shape[0] == 0 and iou_matrix.shape[1] == 0:
-        pass
+        return cm
+    # else
+
     if iou_matrix.shape[0] == 0:
         # Only false positives
         for cl in det_classes:
             cm[n_classes, cl] += 1
-    elif iou_matrix.shape[1] == 0:
+        return cm
+    # else
+
+    if iou_matrix.shape[1] == 0:
         # Only false negatives
         for cl in gt_classes:
             cm[cl, n_classes] += 1
-    else:
-        # Create matches matrix
-        # Matrix where: element i,j True <=> gt i and detection j boxes match
-        # Multiple detections can match one gt, but not vice versa
-        box_matches_matrix = np.logical_and(
-            iou_matrix > iou_thresh, iou_matrix == iou_matrix.max(0)
-        )
-        box_matches_idxs = np.where(box_matches_matrix)
-        # Get classes of each couple of matched gt and box
-        gt_classes_matches = gt_classes[box_matches_idxs[0]]
-        det_classes_matches = det_classes[box_matches_idxs[1]]
-        classes_of_matches = np.stack(
-            [gt_classes_matches, det_classes_matches], 1
-        )
-        # Update cm with matches
-        for match in classes_of_matches:
-            cm[match[0], match[1]] += 1
+        return cm
+    # else
+
+    # Create matches matrix
+    matches_idxs = np.where(iou_matrix > iou_thresh)
+
+    if len(matches_idxs[0]) == 0:
+        # No matches: only false positives and negatives
         # Update cm with false positives
-        fp_idxs = np.where(np.logical_not(box_matches_matrix.any(0)))
-        fp_classes = det_classes[fp_idxs]
-        for cl in fp_classes:
+        for cl in det_classes:
             cm[n_classes, cl] += 1
         # Update cm with false negatives
-        fn_idxs = np.where(np.logical_not(box_matches_matrix.any(1)))
-        fn_classes = gt_classes[fn_idxs]
-        for cl in fn_classes:
+        for cl in gt_classes:
             cm[cl, n_classes] += 1
+        return cm
+    # else
+
+    # Get classes and IoU of matches
+    matches_gt_classes = gt_classes[matches_idxs[0]]
+    matches_det_classes = det_classes[matches_idxs[1]]
+    matches_iou = iou_matrix[matches_idxs]
+    # Create matches array, each match entry is made of:
+    # gt index, det index, gt class, det class, iou
+    matches = np.stack(
+        [
+            matches_idxs[0],
+            matches_idxs[1],
+            matches_gt_classes,
+            matches_det_classes,
+            matches_iou,
+        ],
+        1,
+    )
+    # Each gt may be matched by the det with highest IoU for each class
+    # Each det may only match the gt with highest IoU
+
+    # Sort matches by descending IoU
+    matches = matches[matches[:, -1].argsort()]
+    # For each det that matches multiple gts, keep the match with highest
+    # IoU, prune the others
+    matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+    # Sort matches by descending IoU
+    matches = matches[matches[:, -1].argsort()]
+    # For each gt that is matched by multiple dets that predict the same
+    # class, keep the match with highest IoU, prune the others
+    matches = matches[
+        np.unique(matches[:, [0, 3]], return_index=True, axis=0)[1]
+    ]
+    # Update cm with matches
+    for match_classes in matches[:, [2, 3]].astype(np.int32):
+        cm[*match_classes] += 1
+    # Update cm with false positives
+    fp_mask = np.ones(len(det_classes), dtype=bool)
+    fp_mask[matches_idxs[1]] = False
+    fp_classes = det_classes[fp_mask]
+    for cl in fp_classes:
+        cm[n_classes, cl] += 1
+    # Update cm with false negatives
+    fn_mask = np.ones(len(gt_classes), dtype=bool)
+    fn_mask[matches_idxs[0]] = False
+    fn_classes = gt_classes[fn_mask]
+    for cl in fn_classes:
+        cm[cl, n_classes] += 1
+
+    # # Matrix where: element i,j True <=> gt i and detection j boxes match
+    # # Each detection can match at most one gt, except if multiple gt share
+    # # the same IoU with it
+    # # Each gt can be matched by multiple detections
+    # box_matches_matrix = np.logical_and(
+    #     iou_matrix > iou_thresh, iou_matrix == iou_matrix.max(0)
+    # )
+    # box_matches_idxs = np.where(box_matches_matrix)
+    # # Get classes of each couple of matched gt and box
+    # gt_classes_matches = gt_classes[box_matches_idxs[0]]
+    # det_classes_matches = det_classes[box_matches_idxs[1]]
+    # classes_of_matches = np.stack(
+    #     [gt_classes_matches, det_classes_matches], 1
+    # )
+    # # Update cm with matches
+    # for match in classes_of_matches:
+    #     cm[match[0], match[1]] += 1
+    # # Update cm with false positives
+    # fp_idxs = np.where(np.logical_not(box_matches_matrix.any(0)))
+    # fp_classes = det_classes[fp_idxs]
+    # for cl in fp_classes:
+    #     cm[n_classes, cl] += 1
+    # # Update cm with false negatives
+    # fn_idxs = np.where(np.logical_not(box_matches_matrix.any(1)))
+    # fn_classes = gt_classes[fn_idxs]
+    # for cl in fn_classes:
+    #     cm[cl, n_classes] += 1
     return cm
 
 
@@ -311,59 +375,72 @@ def generate(args):
     conf_th_default_idx = conf_th_list.index(conf_th_default)
 
     # Define stats arrays
+    gts_by_class = np.zeros((n_classes), dtype=np.int32)
+    dets_by_conf_and_class = np.zeros(
+        (len(conf_th_list), n_classes), dtype=np.int32
+    )
     CM_by_iou_and_conf = np.zeros(
         (len(iou_th_list), len(conf_th_list), n_classes + 1, n_classes + 1),
-        dtype="int",
+        dtype=np.int32,
     )
     TP_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="int"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.int32
     )
     FP_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="int"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.int32
     )
     FN_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="int"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.int32
     )
     P_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="float"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.float32
     )
     R_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="float"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.float32
     )
     F1_by_iou_conf_and_class = np.zeros(
-        (len(iou_th_list), len(conf_th_list), n_classes), dtype="float"
+        (len(iou_th_list), len(conf_th_list), n_classes), dtype=np.float32
     )
     macro_F1_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
     micro_F1_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
     weighted_F1_by_iou_and_conf = np.zeros(
-        (len(iou_th_list), len(conf_th_list)), dtype="float"
+        (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
-    AP_by_iou_and_class = np.zeros((len(iou_th_list), n_classes), dtype="float")
-    mAP_by_iou = np.zeros((len(iou_th_list)), dtype="float")
+    AP_by_iou_and_class = np.zeros(
+        (len(iou_th_list), n_classes), dtype=np.float32
+    )
+    mAP_by_iou = np.zeros((len(iou_th_list)), dtype=np.float32)
     mAP_05_095 = np.array(0)
 
     # Calculate confusion matrix
     print("Calculating confusion matrices")
     for gt_path in tqdm(list(ground_truths_dir.glob("*.txt"))):
         gt_classes, gt_boxes, _ = load_label(gt_path)
+        for class_ in gt_classes:
+            gts_by_class[class_] += 1
         detection_path = detections_dir / gt_path.name
         det_classes, det_boxes, det_confidences = load_label(detection_path)
 
         # rows: gt, cols: det
         iou_matrix = calculate_iou_matrix(gt_boxes, det_boxes)
 
-        for i, iou_th in enumerate(iou_th_list):
-            for j, conf_th in enumerate(conf_th_list):
+        for j, conf_th in enumerate(conf_th_list):
+            # Filter dets by confidence threshold
+            conf_idxs = np.where(det_confidences >= conf_th)[0]
+            det_classes_filtered = det_classes[conf_idxs]
+            iou_matrix_filtered = iou_matrix[:, conf_idxs]
+            for class_ in det_classes_filtered:
+                dets_by_conf_and_class[j, class_] += 1
+
+            for i, iou_th in enumerate(iou_th_list):
                 CM_by_iou_and_conf[i, j] += calculate_confusion_matrix(
-                    iou_matrix,
+                    iou_matrix_filtered,
                     gt_classes,
-                    det_classes,
-                    det_confidences,
-                    conf_th,
+                    det_classes_filtered,
                     iou_th,
                     n_classes,
                 )
@@ -381,8 +458,8 @@ def generate(args):
             TP_by_iou_conf_and_class[i, j] = tp
             FP_by_iou_conf_and_class[i, j] = fp
             FN_by_iou_conf_and_class[i, j] = fn
-            p = np.nan_to_num(tp / (tp + fp))
-            r = np.nan_to_num(tp / (tp + fn))
+            p = tp / dets_by_conf_and_class[j]
+            r = tp / gts_by_class
             P_by_iou_conf_and_class[i, j] = p
             R_by_iou_conf_and_class[i, j] = r
             f1 = np.nan_to_num(2 * p * r / (p + r))
@@ -488,10 +565,23 @@ def metrics2plots(metrics, out_dir):
             # Confusion matrix
             fig = plt.figure(dpi=300)
             ax = plt.gca()
+            data = data.astype(np.float32)
+            data[-1, -1] = float("nan")
             im = ax.matshow(data, cmap="cool")
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
-                ax.text(j, i, str(z), ha="center", va="center")
+                if math.isnan(z):
+                    z = "N/A"
+                else:
+                    z = str(int(z))
+                ax.text(
+                    j,
+                    i,
+                    z,
+                    ha="center",
+                    va="center",
+                    fontdict={"fontsize": "small"},
+                )
             plt.title(title)
             plt.xlabel("Predicted class")
             plt.ylabel("True class")
@@ -499,9 +589,12 @@ def metrics2plots(metrics, out_dir):
                 list(range(len(class_names_with_bg))),
                 class_names_with_bg,
                 rotation=90,
+                fontsize="small",
             )
             plt.yticks(
-                list(range(len(class_names_with_bg))), class_names_with_bg
+                list(range(len(class_names_with_bg))),
+                class_names_with_bg,
+                fontsize="small",
             )
             ax.xaxis.set_ticks_position("bottom")
             plt.savefig(
@@ -570,9 +663,9 @@ def metrics2plots(metrics, out_dir):
         r = np.array(metrics[f"Recall curves by class @iou={iou_th_default}"])[
             :, i
         ]
-        p_acc = np.maximum.accumulate(p)
-        r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-        plt.plot(r_acc, p_acc, label=class_names[i])
+        p_acc = np.maximum.accumulate(np.nan_to_num(p))
+        # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
+        plt.plot(r, p_acc, label=class_names[i])
         plt.plot(r, p, linestyle=":")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(
