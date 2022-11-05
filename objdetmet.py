@@ -488,7 +488,7 @@ def metrics2plots(metrics, out_dir):
             # Confusion matrix
             fig = plt.figure(dpi=300)
             ax = plt.gca()
-            im = ax.matshow(data)
+            im = ax.matshow(data, cmap="cool")
             fig.colorbar(im)
             for (i, j), z in np.ndenumerate(data):
                 ax.text(j, i, str(z), ha="center", va="center")
