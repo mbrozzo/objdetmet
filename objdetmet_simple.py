@@ -514,7 +514,7 @@ def metrics2plots(metrics, out_dir):
         r = np.array(metrics[f"Recall curves by class"])[:, i]
         p_acc = np.maximum.accumulate(np.nan_to_num(p))
         # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-        plt.plot(r, p_acc, label=class_names[i])
+        plt.step(r, p_acc, where='post', label=class_names[i])
         plt.plot(r, p, linestyle=":")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(

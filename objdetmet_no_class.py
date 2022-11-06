@@ -462,7 +462,7 @@ def metrics2plots(metrics, out_dir):
     r = np.array(metrics[f"Recall curve @iou={iou_th_default}"])
     p_acc = np.maximum.accumulate(np.nan_to_num(p))
     # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-    plt.plot(r, p_acc, color="tab:blue")
+    plt.step(r, p_acc, where='post', color="tab:blue")
     plt.plot(r, p, linestyle=":", color="tab:blue")
     plt.savefig(
         out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"
