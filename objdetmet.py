@@ -459,11 +459,11 @@ def generate(args):
             TP_by_iou_conf_and_class[i, j] = tp
             FP_by_iou_conf_and_class[i, j] = fp
             FN_by_iou_conf_and_class[i, j] = fn
-            p = tp / dets_by_conf_and_class[j]
+            p_interp_by_r = tp / dets_by_conf_and_class[j]
             r = tp / gts_by_class
-            P_by_iou_conf_and_class[i, j] = p
+            P_by_iou_conf_and_class[i, j] = p_interp_by_r
             R_by_iou_conf_and_class[i, j] = r
-            f1 = np.nan_to_num(2 * p * r / (p + r))
+            f1 = np.nan_to_num(2 * p_interp_by_r * r / (p_interp_by_r + r))
             F1_by_iou_conf_and_class[i, j] = f1
             macro_F1_by_iou_and_conf[i, j] = f1.mean()
             tp_total = tp.sum()
@@ -484,15 +484,44 @@ def generate(args):
     conf_th_best = conf_th_list[weighted_F1_max_idx]
 
     # Calculate AP
-    for i, iou_th in enumerate(iou_th_list):
-        p_by_conf_and_class = P_by_iou_conf_and_class[i]
-        r_by_conf_and_class = R_by_iou_conf_and_class[i]
-        ap = (
-            np.maximum.accumulate(p_by_conf_and_class, 0) * r_by_conf_and_class
-        ).sum(0)
-        AP_by_iou_and_class[i] = ap
-        mAP_by_iou[i] = ap.mean()
-    mAP_05_095 = mAP_by_iou.mean()
+    print("Calculating AP metrics")
+    r_values = []
+    r_step = 0.01
+    r = 1.0
+    i = int(1 / r_step)
+    while r >= 0.0:
+        r_values.append(r)
+        i -= 1
+        r = i / (1 / r_step)  # More precise results
+
+    # Interpolate p
+    P_interp_by_iou_conf_and_class = np.maximum.accumulate(
+        np.nan_to_num(P_by_iou_conf_and_class), axis=1
+    )
+
+    with tqdm(
+        total=len(iou_th_list) * len(class_names) * len(r_values)
+    ) as pbar:
+        for i, iou_th in enumerate(iou_th_list):
+            # 101-point interpolation (COCO)
+            for cl in range(len(class_names)):
+                p_interp_by_r = np.zeros_like(r_values)
+                for j, r in enumerate(r_values):
+                    try:
+                        p_interp_by_r[j] = P_interp_by_iou_conf_and_class[
+                            i,
+                            np.where(R_by_iou_conf_and_class[i, :, cl] >= r)[0][
+                                -1
+                            ],
+                            cl,
+                        ]
+                    except:
+                        pass
+                    pbar.update()
+                AP_by_iou_and_class[i, cl] = p_interp_by_r.mean()
+            mAP_by_iou[i] = AP_by_iou_and_class[i].mean()
+        AP_05_095_by_class = AP_by_iou_and_class.mean(axis=0)
+        mAP_05_095 = mAP_by_iou.mean()
 
     metrics = {
         "Confidence Thresholds": conf_th_list,
@@ -529,6 +558,9 @@ def generate(args):
         f"Confidence Threshold for Maximum Weighted F1 @iou={iou_th_default}": float(
             conf_th_best
         ),
+        "AP@0.5 by class": AP_by_iou_and_class[iou_th_list.index(0.5)].tolist(),
+        "AP@0.75 by class": AP_by_iou_and_class[iou_th_list.index(0.75)].tolist(),
+        "AP@[0.5:0.05:0.95] by class": AP_05_095_by_class.tolist(),
         "mAP@0.5": float(mAP_by_iou[iou_th_list.index(0.5)]),
         "mAP@0.75": float(mAP_by_iou[iou_th_list.index(0.75)]),
         "mAP@[0.5:0.05:0.95]": float(mAP_05_095),
@@ -559,13 +591,13 @@ def metrics2plots(metrics, out_dir):
         "tab:orange",  # 1 orange, black
         "tab:red",  # 2.1/3 red, black
         "tab:green",  # 2.2 green, white
-        "cyan",  # 2.3/6.1 white, black
+        "teal",  # 2.3/6.1 white, black
         "tab:pink",  # 4.1 rose, white
         "tab:brown",  # 4.2 red, white
         "tab:blue",  # 4.3 blue, white
-        "gold",  # 5.1 yellow, black
-        "tab:olive",  # 5.2 yellow, red
-        "lightsalmon",  # 6.2 light grey, grey
+        "tab:olive",  # 5.1 yellow, black
+        "lightsalmon",  # 5.2 yellow, red
+        "lightsteelblue",  # 6.2 light grey, grey
         "greenyellow",  # 7 light yellow, black
         "darkseagreen",  # 7E white
         "darkblue",  # 8 grey, white
@@ -685,7 +717,7 @@ def metrics2plots(metrics, out_dir):
         ]
         p_acc = np.maximum.accumulate(np.nan_to_num(p))
         # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-        plt.step(r, p_acc, where='post', label=class_names[i])
+        plt.step(r, p_acc, where="post", label=class_names[i])
         plt.plot(r, p, linestyle=":")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(

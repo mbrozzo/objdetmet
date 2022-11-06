@@ -30,6 +30,7 @@ class_names = list(classes_to_integers.keys())
 class_names.sort(key=lambda x: classes_to_integers[x])
 class_names_with_bg = class_names + ["bg"]
 
+
 def load_and_simplify_label(path, n_classes, warnings=False):
     path = Path(path)
     empty = np.zeros((n_classes), np.int32)
@@ -258,6 +259,8 @@ def generate(args):
     macro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
     micro_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
     weighted_MCC_by_conf = np.zeros((len(conf_th_list)), dtype=np.float32)
+    AP_by_class = np.zeros(n_classes, dtype=np.float32)
+    mAP = np.array(0)
 
     # Calculate confusion matrix
     print("Calculating confusion matrices")
@@ -325,6 +328,40 @@ def generate(args):
     weighted_F1_max = weighted_F1_by_conf[weighted_F1_max_idx]
     conf_th_best = conf_th_list[weighted_F1_max_idx]
 
+    # Calculate AP
+    print("Calculating AP")
+    r_values = []
+    r_step = 0.01
+    r = 1.0
+    i = int(1 / r_step)
+    while r >= 0.0:
+        r_values.append(r)
+        i -= 1
+        r = i / (1 / r_step)  # More precise results
+
+    # Interpolate p
+    P_interp_by_conf_and_class = np.maximum.accumulate(
+        np.nan_to_num(P_by_conf_and_class), axis=1
+    )
+
+    with tqdm(len(class_names) * len(r_values)) as pbar:
+        # 101-point interpolation (COCO)
+        for cl in range(len(class_names)):
+            p_interp_by_r = np.zeros_like(r_values)
+            for j, r in enumerate(r_values):
+                try:
+                    p_interp_by_r[j] = P_interp_by_conf_and_class[
+                        np.where(R_by_conf_and_class[i, :, cl] >= r)[0][
+                            -1
+                        ],
+                        cl,
+                    ]
+                except:
+                    pass
+                pbar.update()
+            AP_by_class[cl] = p_interp_by_r.mean()
+        mAP = AP_by_class.mean()
+
     metrics = {
         "Confidence Thresholds": conf_th_list,
         f"Confusion Matrices by class @conf={conf_th_default}": CM_by_conf_and_class[
@@ -333,18 +370,20 @@ def generate(args):
         f"Confusion Matrices by class @conf={conf_th_best}": CM_by_conf_and_class[
             weighted_F1_max_idx
         ].tolist(),
-        f"Precision curves by class": P_by_conf_and_class.tolist(),
-        f"Recall curves by class": R_by_conf_and_class.tolist(),
-        f"F1 curves by class": F1_by_conf_and_class.tolist(),
-        f"Macro-F1 curve": macro_F1_by_conf.tolist(),
-        f"Micro-F1 curve": micro_F1_by_conf.tolist(),
-        f"Weighted-F1 curve": weighted_F1_by_conf.tolist(),
-        f"Maximum Weighted F1": float(weighted_F1_max),
-        f"Confidence Threshold for Maximum Weighted F1": float(conf_th_best),
-        f"MCC curves by class": MCC_by_conf_and_class.tolist(),
-        f"Macro-MCC curve": macro_MCC_by_conf.tolist(),
-        f"Micro-MCC curve": micro_MCC_by_conf.tolist(),
-        f"Weighted-MCC curve": weighted_MCC_by_conf.tolist(),
+        "Precision curves by class": P_by_conf_and_class.tolist(),
+        "Recall curves by class": R_by_conf_and_class.tolist(),
+        "F1 curves by class": F1_by_conf_and_class.tolist(),
+        "Macro-F1 curve": macro_F1_by_conf.tolist(),
+        "Micro-F1 curve": micro_F1_by_conf.tolist(),
+        "Weighted-F1 curve": weighted_F1_by_conf.tolist(),
+        "Maximum Weighted F1": float(weighted_F1_max),
+        "Confidence Threshold for Maximum Weighted F1": float(conf_th_best),
+        "MCC curves by class": MCC_by_conf_and_class.tolist(),
+        "Macro-MCC curve": macro_MCC_by_conf.tolist(),
+        "Micro-MCC curve": micro_MCC_by_conf.tolist(),
+        "Weighted-MCC curve": weighted_MCC_by_conf.tolist(),
+        "AP by class": AP_by_class.tolist(),
+        "mAP": float(mAP),
     }
     if gen_json:
         print("Saving JSON")
@@ -375,13 +414,13 @@ def metrics2plots(metrics, out_dir):
         "tab:orange",  # 1 orange, black
         "tab:red",  # 2.1/3 red, black
         "tab:green",  # 2.2 green, white
-        "cyan",  # 2.3/6.1 white, black
+        "teal",  # 2.3/6.1 white, black
         "tab:pink",  # 4.1 rose, white
         "tab:brown",  # 4.2 red, white
         "tab:blue",  # 4.3 blue, white
-        "gold",  # 5.1 yellow, black
-        "tab:olive",  # 5.2 yellow, red
-        "lightsalmon",  # 6.2 light grey, grey
+        "tab:olive",  # 5.1 yellow, black
+        "lightsalmon",  # 5.2 yellow, red
+        "lightsteelblue",  # 6.2 light grey, grey
         "greenyellow",  # 7 light yellow, black
         "darkseagreen",  # 7E white
         "darkblue",  # 8 grey, white
@@ -514,7 +553,7 @@ def metrics2plots(metrics, out_dir):
         r = np.array(metrics[f"Recall curves by class"])[:, i]
         p_acc = np.maximum.accumulate(np.nan_to_num(p))
         # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-        plt.step(r, p_acc, where='post', label=class_names[i])
+        plt.step(r, p_acc, where="post", label=class_names[i])
         plt.plot(r, p, linestyle=":")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(

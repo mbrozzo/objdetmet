@@ -280,8 +280,7 @@ def generate(args):
         (len(iou_th_list), len(conf_th_list)), dtype=np.float32
     )
     AP_by_iou = np.zeros((len(iou_th_list)), dtype=np.float32)
-    mAP_by_iou = np.zeros((len(iou_th_list)), dtype=np.float32)
-    mAP_05_095 = np.array(0)
+    AP_05_095 = np.array(0)
 
     # Calculate confusion matrix
     print("Calculating confusion matrices")
@@ -327,13 +326,37 @@ def generate(args):
     conf_th_best = conf_th_list[F1_max_idx]
 
     # Calculate AP
-    for i, iou_th in enumerate(iou_th_list):
-        p_by_conf = P_by_iou_and_conf[i]
-        r_by_conf = R_by_iou_and_conf[i]
-        ap = (np.maximum.accumulate(p_by_conf, 0) * r_by_conf).sum(0)
-        AP_by_iou[i] = ap
-        mAP_by_iou[i] = ap.mean()
-    mAP_05_095 = mAP_by_iou.mean()
+
+    print("Calculating AP metrics")
+    r_values = []
+    r_step = 0.01
+    r = 1.0
+    i = int(1 / r_step)
+    while r >= 0.0:
+        r_values.append(r)
+        i -= 1
+        r = i / (1 / r_step)  # More precise results
+
+    # Interpolate p
+    P_interp_by_iou_and_conf = np.maximum.accumulate(
+        np.nan_to_num(P_by_iou_and_conf), axis=1
+    )
+
+    with tqdm(total=len(iou_th_list) * len(r_values)) as pbar:
+        for i, iou_th in enumerate(iou_th_list):
+            # 101-point interpolation (COCO)
+            p_interp_by_r = np.zeros_like(r_values)
+            for j, r in enumerate(r_values):
+                try:
+                    p_interp_by_r[j] = P_interp_by_iou_and_conf[
+                        i,
+                        np.where(R_by_iou_and_conf[i, :] >= r)[0][-1],
+                    ]
+                except:
+                    pass
+                pbar.update()
+            AP_by_iou[i] = p_interp_by_r.mean()
+        AP_05_095 = AP_by_iou.mean()
 
     metrics = {
         "Confidence Thresholds": conf_th_list,
@@ -361,9 +384,9 @@ def generate(args):
         f"Confidence Threshold for Maximum F1 @iou={iou_th_default}": float(
             conf_th_best
         ),
-        "mAP@0.5": float(mAP_by_iou[iou_th_list.index(0.5)]),
-        "mAP@0.75": float(mAP_by_iou[iou_th_list.index(0.75)]),
-        "mAP@[0.5:0.05:0.95]": float(mAP_05_095),
+        "AP@0.5": float(AP_by_iou[iou_th_list.index(0.5)]),
+        "AP@0.75": float(AP_by_iou[iou_th_list.index(0.75)]),
+        "AP@[0.5:0.05:0.95]": float(AP_05_095),
     }
     if gen_json:
         print("Saving JSON")
@@ -462,7 +485,7 @@ def metrics2plots(metrics, out_dir):
     r = np.array(metrics[f"Recall curve @iou={iou_th_default}"])
     p_acc = np.maximum.accumulate(np.nan_to_num(p))
     # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
-    plt.step(r, p_acc, where='post', color="tab:blue")
+    plt.step(r, p_acc, where="post", color="tab:blue")
     plt.plot(r, p, linestyle=":", color="tab:blue")
     plt.savefig(
         out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"
