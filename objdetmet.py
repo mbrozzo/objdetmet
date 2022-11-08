@@ -468,7 +468,9 @@ def generate(args):
             macro_F1_by_iou_and_conf[i, j] = f1.mean()
             tp_total = tp.sum()
             micro_F1_by_iou_and_conf[i, j] = np.nan_to_num(
-                tp_total / (tp_total + 0.5 * (fp.sum() + fn.sum()))
+                2
+                * tp_total
+                / (dets_by_conf_and_class[j].sum() + gts_by_class.sum())
             )
             weights = cm.sum(1)[:-1]
             weighted_F1_by_iou_and_conf[i, j] = np.nan_to_num(
@@ -559,7 +561,9 @@ def generate(args):
             conf_th_best
         ),
         "AP@0.5 by class": AP_by_iou_and_class[iou_th_list.index(0.5)].tolist(),
-        "AP@0.75 by class": AP_by_iou_and_class[iou_th_list.index(0.75)].tolist(),
+        "AP@0.75 by class": AP_by_iou_and_class[
+            iou_th_list.index(0.75)
+        ].tolist(),
         "AP@[0.5:0.05:0.95] by class": AP_05_095_by_class.tolist(),
         "mAP@0.5": float(mAP_by_iou[iou_th_list.index(0.5)]),
         "mAP@0.75": float(mAP_by_iou[iou_th_list.index(0.75)]),
@@ -704,6 +708,28 @@ def metrics2plots(metrics, out_dir):
     plt.ylabel("Precision")
     plt.xlim([-0.01, 1.01])
     plt.ylim([-0.01, 1.01])
+
+    f1_values = np.linspace(0.1, 0.9, 9)
+    half_samples = 10
+    p_by_f1 = np.zeros((len(f1_values), 2 * half_samples))
+    r_by_f1 = np.zeros((len(f1_values), 2 * half_samples))
+    for j, f1 in enumerate(f1_values):
+        for i, p in enumerate(np.geomspace(f1, 1, half_samples)):
+            r = p * f1 / (2 * p - f1)
+            p_by_f1[j][half_samples + i] = p
+            r_by_f1[j][half_samples + i] = r
+            p_by_f1[j][half_samples - i - 1] = r
+            r_by_f1[j][half_samples - i - 1] = p
+    for f1, p, r in zip(f1_values, p_by_f1, r_by_f1):
+        plt.plot(r, p, linestyle="dotted", color="lightgray")
+        plt.text(
+            r[half_samples],
+            p[half_samples],
+            f"F1={f1:.1f}",
+            color="lightgray",
+            zorder=-1,
+        )
+
     ax = plt.gca()
     ax.set_prop_cycle(
         color=[val for pair in zip(colors, colors) for val in pair]
@@ -718,7 +744,7 @@ def metrics2plots(metrics, out_dir):
         p_acc = np.maximum.accumulate(np.nan_to_num(p))
         # r_acc = np.flip(np.maximum.accumulate(np.flip(r)))
         plt.step(r, p_acc, where="post", label=class_names[i])
-        plt.plot(r, p, linestyle=":")
+        plt.plot(r, p, linestyle="dashed")
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.savefig(
         out_dir / f"{make_filename_safe(title)}.png", bbox_inches="tight"

@@ -480,6 +480,28 @@ def metrics2plots(metrics, out_dir):
     plt.ylabel("Precision")
     plt.xlim([-0.01, 1.01])
     plt.ylim([-0.01, 1.01])
+    
+    f1_values = np.linspace(0.1, 0.9, 9)
+    half_samples = 10
+    p_by_f1 = np.zeros((len(f1_values), 2 * half_samples))
+    r_by_f1 = np.zeros((len(f1_values), 2 * half_samples))
+    for j, f1 in enumerate(f1_values):
+        for i, p in enumerate(np.geomspace(f1, 1, half_samples)):
+            r = p * f1 / (2 * p - f1)
+            p_by_f1[j][half_samples + i] = p
+            r_by_f1[j][half_samples + i] = r
+            p_by_f1[j][half_samples - i - 1] = r
+            r_by_f1[j][half_samples - i - 1] = p
+    for f1, p, r in zip(f1_values, p_by_f1, r_by_f1):
+        plt.plot(r, p, linestyle="dotted", color="lightgray")
+        plt.text(
+            r[half_samples],
+            p[half_samples],
+            f"F1={f1:.1f}",
+            color="lightgray",
+            zorder=-1,
+        )
+    
     ax = plt.gca()
     p = np.array(metrics[f"Precision curve @iou={iou_th_default}"])
     r = np.array(metrics[f"Recall curve @iou={iou_th_default}"])
