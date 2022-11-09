@@ -174,20 +174,26 @@ def calculate_confusion_matrix(
     # Each det may only match the gt with highest IoU
 
     # Sort matches by descending IoU
-    matches = matches[matches[:, -1].argsort()]
+    matches = np.flip(matches[matches[:, -1].argsort()], axis=0)
     # For each det that matches multiple gts, keep the match with highest
     # IoU, prune the others
     matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
     # Sort matches by descending IoU
-    matches = matches[matches[:, -1].argsort()]
+    matches = np.flip(matches[matches[:, -1].argsort()], axis=0)
     # For each gt that is matched by multiple dets that predict the same
-    # class, keep the match with highest IoU, prune the others
-    matches = matches[
-        np.unique(matches[:, [0, 3]], return_index=True, axis=0)[1]
-    ]
+    # class, keep the match with highest IoU, prune the others and 
+    # classify them as false positives
+    top_matches_idxs = np.unique(matches[:, [0, 3]], return_index=True, axis=0)[1]
+    top_matches = matches[top_matches_idxs]
+    pruned_matches_mask = np.ones(len(matches), dtype=bool)
+    pruned_matches_mask[top_matches_idxs] = False
+    pruned_matches = matches[pruned_matches_mask]
     # Update cm with matches
-    for match_classes in matches[:, [2, 3]].astype(np.int32):
+    for match_classes in top_matches[:, [2, 3]].astype(np.int32):
         cm[*match_classes] += 1
+    # Update cm with pruned matches
+    for det_class in pruned_matches[:, 3].astype(np.int32):
+        cm[n_classes, det_class] += 1
     # Update cm with false positives
     fp_mask = np.ones(len(det_classes), dtype=bool)
     fp_mask[matches_idxs[1]] = False
